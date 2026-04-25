@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>US National Parks Visit Guide</title>
+    <script src="theme-init.js"></script>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="hero">
+      <h1>US National Parks Visit Guide</h1>
+      <p>
+        Browse every U.S. National Park and get practical guidelines for safer,
+        smoother trips.
+      </p>
+      <p class="hero-link-row">
+        <a class="hero-link" href="protect-parks.html">How to Protect National Parks (Leave No Trace)</a>
+      </p>
+    </header>
+
+    <main class="container">
+      <section class="controls">
+        <label for="park-search">Search a park</label>
+        <input
+          id="park-search"
+          type="text"
+          placeholder="Type a park name, state, or keyword..."
+          autocomplete="off"
+        />
+        <label for="state-filter">Filter by state or territory</label>
+        <select id="state-filter" aria-label="State or territory filter">
+          <option value="all">Choose a state (or search first)</option>
+        </select>
+      </section>
+
+      <section class="summary" id="result-summary" aria-live="polite"></section>
+
+      <section id="parks-grid" class="parks-grid"></section>
+    </main>
+
+    <footer>
+      <p>
+        Tips are planning guidance only. Always verify current alerts, permits,
+        road status, and weather with the National Park Service before travel.
+      </p>
+      <div id="theme-bar" class="theme-bar"></div>
+    </footer>
+
+    <script src="parks-data.js"></script>
+    <script src="script.js"></script>
+    <script src="theme.js"></script>
+  </body>
+</html>
