@@ -450,9 +450,31 @@ function buildWildlifeSection(park) {
 
 const ANIMAL_IMAGE_CACHE = new Map();
 const ATTRACTION_IMAGE_CACHE = new Map();
+const IMAGE_CACHE_PREFIX = "nps_img_cache_v1:";
+
+function getCachedImageUrl(key) {
+  try {
+    return localStorage.getItem(`${IMAGE_CACHE_PREFIX}${key}`) || "";
+  } catch (_error) {
+    return "";
+  }
+}
+
+function setCachedImageUrl(key, value) {
+  try {
+    localStorage.setItem(`${IMAGE_CACHE_PREFIX}${key}`, value || "");
+  } catch (_error) {
+    // Ignore localStorage issues.
+  }
+}
 
 async function fetchAnimalImageUrl(animalName) {
   const key = animalName.toLowerCase();
+  const stored = getCachedImageUrl(key);
+  if (stored) {
+    ANIMAL_IMAGE_CACHE.set(key, stored);
+    return stored;
+  }
   if (ANIMAL_IMAGE_CACHE.has(key)) {
     return ANIMAL_IMAGE_CACHE.get(key);
   }
@@ -464,11 +486,11 @@ async function fetchAnimalImageUrl(animalName) {
     origin: "*",
     generator: "search",
     gsrnamespace: "6",
-    gsrlimit: "10",
+    gsrlimit: "5",
     gsrsearch: query,
     prop: "imageinfo",
     iiprop: "url",
-    iiurlwidth: "900"
+    iiurlwidth: "640"
   });
 
   try {
@@ -480,15 +502,22 @@ async function fetchAnimalImageUrl(animalName) {
       .map((page) => page?.imageinfo?.[0]?.thumburl || page?.imageinfo?.[0]?.url)
       .find((url) => typeof url === "string" && /\.(jpg|jpeg|png|webp)(\?|$)/i.test(url));
     ANIMAL_IMAGE_CACHE.set(key, selected || "");
+    setCachedImageUrl(key, selected || "");
     return selected || "";
   } catch (_error) {
     ANIMAL_IMAGE_CACHE.set(key, "");
+    setCachedImageUrl(key, "");
     return "";
   }
 }
 
 async function fetchAttractionImageUrl(place, parkName) {
   const key = `${place}__${parkName}`.toLowerCase();
+  const stored = getCachedImageUrl(key);
+  if (stored) {
+    ATTRACTION_IMAGE_CACHE.set(key, stored);
+    return stored;
+  }
   if (ATTRACTION_IMAGE_CACHE.has(key)) return ATTRACTION_IMAGE_CACHE.get(key);
 
   const query = `${place} ${parkName}`;
@@ -498,11 +527,11 @@ async function fetchAttractionImageUrl(place, parkName) {
     origin: "*",
     generator: "search",
     gsrnamespace: "6",
-    gsrlimit: "10",
+    gsrlimit: "5",
     gsrsearch: query,
     prop: "imageinfo",
     iiprop: "url",
-    iiurlwidth: "1200"
+    iiurlwidth: "720"
   });
 
   try {
@@ -514,9 +543,11 @@ async function fetchAttractionImageUrl(place, parkName) {
       .map((page) => page?.imageinfo?.[0]?.thumburl || page?.imageinfo?.[0]?.url)
       .find((url) => typeof url === "string" && /\.(jpg|jpeg|png|webp)(\?|$)/i.test(url));
     ATTRACTION_IMAGE_CACHE.set(key, selected || "");
+    setCachedImageUrl(key, selected || "");
     return selected || "";
   } catch (_error) {
     ATTRACTION_IMAGE_CACHE.set(key, "");
+    setCachedImageUrl(key, "");
     return "";
   }
 }
@@ -525,31 +556,59 @@ async function renderWildlifeImages() {
   const cards = Array.from(document.querySelectorAll(".wildlife-card"));
   if (!cards.length) return;
 
-  const uniqueAnimals = Array.from(new Set(cards.map((card) => card.dataset.animal).filter(Boolean))).slice(0, 48);
-  const imageMap = new Map();
-
-  await Promise.all(
-    uniqueAnimals.map(async (animal) => {
-      const url = await fetchAnimalImageUrl(animal);
-      imageMap.set(animal, url);
-    })
-  );
-
   cards.forEach((card) => {
     const animal = card.dataset.animal || "";
     const img = card.querySelector(".wildlife-photo");
-    const wrap = card.querySelector(".wildlife-photo-wrap");
-    if (!img || !wrap) return;
-    const url = imageMap.get(animal) || "";
+    if (!img || !animal) return;
+    img.alt = `${animal} photo`;
+    img.dataset.imageLookup = animal;
+  });
+
+  setupDeferredImageLoader(".wildlife-photo", async (lookupKey) => {
+    const url = await fetchAnimalImageUrl(lookupKey);
+    return url;
+  });
+}
+
+function setupDeferredImageLoader(selector, loader) {
+  const candidates = Array.from(document.querySelectorAll(selector)).filter(
+    (img) => img.dataset.deferBound !== "1"
+  );
+  if (!candidates.length) return;
+
+  const reveal = async (img) => {
+    img.dataset.deferBound = "1";
+    const lookupKey = img.dataset.imageLookup || "";
+    if (!lookupKey) return;
+    const wrap = img.closest(".wildlife-photo-wrap, .attraction-photo-wrap");
+    const url = await loader(lookupKey);
     if (url) {
       img.src = url;
-      img.alt = `${animal} photo`;
       img.dataset.fullSrc = url;
-    } else {
+    } else if (wrap) {
       wrap.classList.add("wildlife-photo-empty");
-      wrap.innerHTML = `<span>No photo found</span>`;
+      wrap.innerHTML = "<span>No photo found</span>";
     }
-  });
+  };
+
+  if (!("IntersectionObserver" in window)) {
+    candidates.forEach((img) => reveal(img));
+    return;
+  }
+
+  const observer = new IntersectionObserver(
+    (entries, obs) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        const img = entry.target;
+        obs.unobserve(img);
+        reveal(img);
+      });
+    },
+    { rootMargin: "180px 0px" }
+  );
+
+  candidates.forEach((img) => observer.observe(img));
 }
 
 function ensureWildlifeLightbox() {
@@ -600,26 +659,21 @@ async function renderAttractionImages(park) {
   const cards = Array.from(document.querySelectorAll(".attraction-card"));
   if (!cards.length) return;
 
-  await Promise.all(
-    cards.map(async (card) => {
-      const place = card.dataset.place || "";
-      const img = card.querySelector(".attraction-photo");
-      const wrap = card.querySelector(".attraction-photo-wrap");
-      if (!img || !wrap || !place) return;
+  cards.forEach((card) => {
+    const place = card.dataset.place || "";
+    const img = card.querySelector(".attraction-photo");
+    if (!img || !place) return;
+    img.alt = `${place} in ${park.name}`;
+    img.dataset.imageLookup = place;
+  });
 
-      const url = await fetchAttractionImageUrl(place, park.name);
-      if (url) {
-        img.src = url;
-        img.alt = `${place} in ${park.name}`;
-      } else {
-        wrap.classList.add("wildlife-photo-empty");
-        wrap.innerHTML = "<span>Attraction image unavailable</span>";
-      }
-    })
-  );
+  setupDeferredImageLoader(".attraction-photo", async (place) => {
+    const url = await fetchAttractionImageUrl(place, park.name);
+    return url;
+  });
 }
 
-function makeSectionsExpandable() {
+function makeSectionsExpandable(park) {
   const sections = Array.from(document.querySelectorAll(".park-section"));
   sections.forEach((section, index) => {
     if (section.dataset.expandableReady === "1") return;
@@ -650,6 +704,16 @@ function makeSectionsExpandable() {
       section.classList.remove("is-collapsed");
       content.style.maxHeight = `${content.scrollHeight}px`;
       content.style.opacity = "1";
+      if (section.dataset.loaded === "1") return;
+      if (titleText.includes("Wildlife")) {
+        renderWildlifeImages();
+        attachWildlifeImageLightbox();
+        section.dataset.loaded = "1";
+      } else if (titleText.includes("Top Tourist Attractions")) {
+        renderAttractionImages(park);
+        attachWildlifeImageLightbox();
+        section.dataset.loaded = "1";
+      }
     };
 
     const closeSection = () => {
@@ -691,11 +755,11 @@ async function fetchCommonsPhotos(park, limit = 3) {
     origin: "*",
     generator: "search",
     gsrnamespace: "6",
-    gsrlimit: "25",
+    gsrlimit: "12",
     gsrsearch: searchTerm,
     prop: "imageinfo",
     iiprop: "url|extmetadata",
-    iiurlwidth: "1200"
+    iiurlwidth: "900"
   });
 
   const response = await fetch(`https://commons.wikimedia.org/w/api.php?${params.toString()}`);
@@ -748,7 +812,7 @@ async function renderCommonsPhotos(park) {
   grid.innerHTML = "<p>Loading Creative Commons photos...</p>";
 
   try {
-    const photos = await fetchCommonsPhotos(park, 8);
+    const photos = await fetchCommonsPhotos(park, 6);
     if (!photos.length) {
       grid.innerHTML = "<p>No Creative Commons photos found for this park yet.</p>";
       return;
@@ -1188,38 +1252,6 @@ async function renderParkMap(park) {
   const mapNode = document.getElementById("park-map");
   if (!mapNode) return;
 
-  let center = [39.8283, -98.5795];
-  let parkBounds = boundsFromCenter(center);
-  let parkGeoJson = null;
-  try {
-    const location = await geocodePark(park);
-    center = location.center;
-    parkBounds = location.bbox || boundsFromCenter(center);
-    parkGeoJson = location.geojson;
-  } catch (_error) {
-    // Fallback keeps map usable even when geocoding is unavailable.
-  }
-
-  let trails = [];
-  let pois = [];
-  try {
-    const raw = await fetchMapFeatures(parkBounds);
-    const parsed = parseOverpass(raw);
-    trails = parsed.trails;
-    pois = parsed.pois;
-  } catch (_error) {
-    // Keep the base map visible even if feature lookup fails.
-  }
-  if (!trails.length) {
-    trails = buildFallbackTrails(parkBounds);
-  }
-  const boundaryRings = extractBoundaryRings(parkGeoJson, parkBounds);
-  const boundsPoints = [];
-  boundaryRings.forEach((ring) => ring.forEach((pt) => boundsPoints.push(pt)));
-  trails.forEach((trail) => trail.geometry.forEach((pt) => boundsPoints.push(pt)));
-  pois.forEach((poi) => boundsPoints.push([poi.lat, poi.lon]));
-  const finalBounds = padBounds(boundsFromPoints(boundsPoints, parkBounds), 0.06);
-
   const mapImageUrl = await getPreferredMapImageUrl(park);
   mapNode.innerHTML = `
     <div class="map-static-shell">
@@ -1233,7 +1265,7 @@ async function renderParkMap(park) {
             mapImageUrl
               ? `<img class="park-map-image" src="${escapeHtml(mapImageUrl)}" alt="${escapeHtml(
                   park.name
-                )} park map" loading="lazy" />`
+                )} park map" loading="eager" fetchpriority="high" decoding="async" />`
               : `<div class="map-unavailable">Official park map image is not available yet for this park.</div>`
           }
         </div>
@@ -1241,8 +1273,7 @@ async function renderParkMap(park) {
     </div>
   `;
   attachStaticMapInteraction();
-
-  renderMapDescriptions(trails, pois);
+  renderMapDescriptions([], []);
 }
 
 if (!park) {
@@ -1352,8 +1383,6 @@ if (!park) {
 
   renderParkMap(park);
   renderCommonsPhotos(park);
-  renderWildlifeImages();
-  renderAttractionImages(park);
   attachWildlifeImageLightbox();
-  makeSectionsExpandable();
+  makeSectionsExpandable(park);
 }
