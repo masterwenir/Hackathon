@@ -954,22 +954,6 @@ function parseOverpass(data) {
   };
 }
 
-function renderMapDescriptions(trails, pois) {
-  const trailsNode = document.getElementById("map-trail-list");
-  const featuresNode = document.getElementById("map-feature-list");
-  if (!trailsNode || !featuresNode) return;
-
-  trailsNode.innerHTML = trails.length
-    ? trails.map((trail) => `<li>${escapeHtml(trail.name)}</li>`).join("")
-    : "<li>Trail lines are drawn on the map for this park area.</li>";
-
-  featuresNode.innerHTML = pois.length
-    ? pois
-        .map((poi) => `<li><strong>${prettyPoiType(poi.type)}:</strong> ${escapeHtml(poi.name)}</li>`)
-        .join("")
-    : "<li>No labeled visitor features were found from map data for this area.</li>";
-}
-
 function buildFallbackTrails(bounds) {
   const latSpan = Math.max(0.04, bounds.north - bounds.south);
   const lonSpan = Math.max(0.04, bounds.east - bounds.west);
@@ -1273,7 +1257,6 @@ async function renderParkMap(park) {
     </div>
   `;
   attachStaticMapInteraction();
-  renderMapDescriptions([], []);
 }
 
 if (!park) {
@@ -1322,16 +1305,6 @@ if (!park) {
     <section class="park-section">
       <h3>Park Map</h3>
       <div class="map-wrap" id="park-map" role="img" aria-label="Map of ${park.name}"></div>
-      <div class="map-details">
-        <div class="map-detail-block">
-          <h4>Named Trails</h4>
-          <ul id="map-trail-list"></ul>
-        </div>
-        <div class="map-detail-block">
-          <h4>Labeled Features</h4>
-          <ul id="map-feature-list"></ul>
-        </div>
-      </div>
     </section>
 
     <section class="park-section">
