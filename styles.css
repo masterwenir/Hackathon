@@ -196,7 +196,7 @@ h4,
 
 .parks-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(265px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(265px, 100%), 1fr));
   gap: 0.95rem;
 }
 
